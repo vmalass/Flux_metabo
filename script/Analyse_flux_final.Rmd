@@ -1,0 +1,496 @@
+---
+title: "analyse_flux_final"
+author: "Malassigne_Victor"
+date: "4/19/2023"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 28px;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+}
+
+</style>
+
+
+```{r setup, include=FALSE}
+library(rmarkdown)  
+library(tinytex)
+library(tidyverse)
+library(Matrix)
+library(Seurat)
+library(RColorBrewer)
+library(gridExtra)
+library(cowplot)
+library(rstatix)
+library(ggpubr)
+library(reshape)
+library(ggridges)
+library(gplots)
+library(clustree)
+
+```
+
+
+```{r}
+seu <- readRDS("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/seu_befor_flux.RDS")
+seu
+my_palette = c("D0"= "#E0E0E0",
+               "D4"= "#ccFF99",
+               "D7"= "#0066CC",
+               "D10"= "#006633",
+               "D14"= "#FF99FF",
+               "D21"= "#994C00",
+               "D32"= "#FF9999",
+               "D90"= "#FF0000"
+               )
+```
+
+```{r}
+DimPlot(seu, reduction = "umap", label = TRUE, group.by = "SCT_snn_res.0.8")
+```
+
+
+
+## Flux  
+### Visualisation seu et flux  
+```{r}
+predFlux <- read.csv("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/Results_scFEA/mouse_flux_gut.csv", header = T, row.names = 1)
+
+# colnames(predFlux[,71:102])
+predFlux[,71:102] <- NULL  # Elimination des modules 71 à 105 
+
+# reste 136 modules
+
+predFlux <- data.matrix(predFlux)
+predFlux0 <- t(predFlux)
+seu[["FLUX"]] <- CreateAssayObject(counts = predFlux0)
+seu
+DefaultAssay(seu) <- 'FLUX'
+seu
+```
+
+```{r}
+seu <- FindVariableFeatures(seu, selection.method = "vst", verbose = F)
+seu  # regarder le nombre de variable
+
+seu$orig.ident <- factor(seu$orig.ident, levels = c("D0", "D4", "D7", "D10", "D14", "D21", "D32"))
+```
+
+
+```{r}
+seu <- ScaleData(seu, features = rownames(seu), assay = 'FLUX', verbose = F)
+seu <- RunPCA(seu, features = VariableFeatures(object = seu), reduction.name = 'pca.flux', verbose = F)
+ElbowPlot(seu, ndims = 30, reduction = 'pca.flux')
+DimPlot(seu, reduction = "pca.flux", label = TRUE, group.by = "orig.ident", cols = my_palette)
+```
+
+
+# Clustree and clusterization   
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+seu <- FindNeighbors(seu, dims = 1:7, reduction = 'pca.flux', verbose = F, assay = 'FLUX')
+seu <- FindClusters(seu , graph.name = 'FLUX_snn', verbose = F, resolution = seq(0,1,0.1))
+
+clustree(seu, prefix = "FLUX_snn_res.") +
+  ggtitle(label = "Clustree flux avec 7 CP")
+
+seu <- RunUMAP(seu, dims = 1:7, assay = 'FLUX', reduction = 'pca.flux', reduction.name = "umap.metabo", verbose = F)
+seu <- FindClusters(seu , graph.name = 'FLUX_snn', verbose = F, resolution = 0.5)
+```
+
+
+```{r}
+seu <- RunUMAP(seu, dims = 1:7, assay = 'FLUX', reduction.name = "umap.flux", reduction = "pca.flux", verbose = F) # remplir les dims
+seu <- FindNeighbors(seu, dims = 1:7, reduction = 'pca.flux', verbose = F, assay = 'FLUX')
+seu <- FindClusters(seu , graph.name = 'FLUX_snn', verbose = F, resolution = 0.7)
+head(Idents(seu))
+DimPlot(seu, reduction = "umap.flux", label = TRUE)
+DimPlot(seu, reduction = "umap.flux", label = TRUE, group.by = "orig.ident", cols = my_palette, label.box = T)
+DimPlot(seu, reduction = "umap", label = TRUE, group.by = "FLUX_snn_res.0.5")
+
+DimPlot(seu,reduction = "pca", split.by = "orig.ident", group.by = "orig.ident", cols = my_palette)
+DimPlot(seu,reduction = "pca.flux", split.by = "orig.ident", group.by = "orig.ident", cols = my_palette)
+DimPlot(seu,reduction = "umap", split.by = "orig.ident", group.by = "orig.ident", cols = my_palette)
+DimPlot(seu,reduction = "umap.flux", split.by = "orig.ident", group.by = "orig.ident", cols = my_palette)
+
+
+### Figure rapport :
+DimPlot(seu, reduction = "umap", label.box = T, label = T, cols = my_palette, group.by = "orig.ident") +
+  labs(title = "UMAP avec les jours de prélèvements")
+DimPlot(seu, reduction = "umap", label.box = T, label = T, group.by = "FLUX_snn_res.0.5") +
+  labs(title = "UMAP avec les clusters de flux métaboliques")
+```
+
+
+### Analyse des flux 
+```{r}
+# Filtrage des modules avec un |CV| > e-10
+data_c <- seu@assays$FLUX@counts
+dt_c0 <- as.matrix(data_c)*1000  # x1000 car 10^-3 = seuil de significativité comme ça on passe à 1 en seuil
+# calcul de |CV| et filtre sur valeur >1e-10 = DEVRAIT ÉLIMINER LES MODULES CONSTANTS SUR TOUTE CELLULE
+yyy <- seu@meta.data$orig.ident 
+levels(as.factor(seu@meta.data$orig.ident))
+```
+
+```{r}
+ppp_all <- c() 
+for(ii in 1:nrow(dt_c0)){   # On  parcourt les lignes de dt_c0 (i.e. les modules)
+    xxx <- dt_c0[ii,]       # Expression du module dans toutes les cellules
+    final_df <- cbind(paste('X', 1:length(xxx), sep=''), xxx, yyy) # un data frame avec 1 col "numéro cellule"
+    final_df <- as.data.frame(final_df)  # une colonne et l'expression du module
+    final_df[,2] <- as.numeric(final_df[,2])  # une colone identifiant de la cellules 
+    colnames(final_df) <- c('var', 'flux', 'cellType')  # nommées
+    pp <- sd(final_df$flux)/abs(mean(final_df$flux))  # on calcule le |CV| de chaque module sur toutes les cellules
+    ppp_all <- c(ppp_all, pp)  #  On remplit ppp_all avec cette valeur
+}
+
+a <- cbind(as.data.frame(ppp_all), rownames(seu))
+b <- a < 5e-3
+a <- a[b == T,]
+
+tg_ids <- which(ppp_all > 5e-3) #  On filtre les [CV| > 5e-3
+
+dim(predFlux)   # 136 M avant filtre sur CV
+```
+
+```{r}
+sel <- str_replace(rownames(dt_c0)[tg_ids],"M-" ,"M_")
+predFlux <- predFlux[,sel]*1000    
+
+dim(predFlux)  # 112 M après filtre CV
+
+colnames(predFlux)  # liste tous les modules
+```
+
+```{r}
+# (options()$max.print)
+options(max.print = 1500)
+summary(predFlux)  # regarder tous les modules
+
+moy <- c()
+mini <- c()
+maxi <- c()
+for (i in 1:ncol(predFlux)) {
+  moy <- c(moy, format(mean(predFlux[,i]), digits = 3))
+  mini <- c(mini, format(min(predFlux[,i]), digits = 3))
+  maxi <- c(maxi, format(max(predFlux[,i]), digits = 3))
+}
+resume <- as.data.frame(cbind(colnames(predFlux), moy, mini, maxi))
+colnames(resume) <- c("module", "moyenne", "mini", "maxi")
+resume[,2:4] <- lapply(resume[,2:4], as.numeric)
+
+dim(resume) # 112 modules
+
+resume <- filter(resume, maxi >= 1)  # on récupère tous les modules significatif (sup à 1 car *1000)
+
+dim(resume)  # nombre de module restant 55
+resume$module  # liste des modules restant
+sel[which(!(sel %in% resume$module))]  # liste des modules sup
+```
+
+
+```{r}
+predFlux <- predFlux[,resume$module]  # filtrage des modules
+dim(predFlux)  # 55 M après filtre >1
+
+flux <- as.data.frame(predFlux)
+flux$cells <- rownames(flux)
+flux <- relocate(flux, cells, .before = M_1)
+mouse_module_info <- read.csv("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/mouse_modules_info.csv", header = T, row.names = 1, sep = ";")
+
+supermodules <- mouse_module_info[colnames(flux)[-1],7]
+supermodules <- str_c(rep("SM", 55), str_trim(supermodules, side = "left"))
+```
+
+```{r}
+for (i in 1:22) {
+  print(paste0(paste0("SM", as.character(i)), " ", paste0("SM", as.character(i)) %in% supermodules))
+}
+# True = supermodule rpz False = supermodule non rpz
+```
+
+```{r}
+# graphing
+long <- pivot_longer(flux, !cells, names_to = 'modules', values_to='fluxes')
+long$SM <- rep(supermodules, nrow(flux))
+# vérification
+module_info <- as.data.frame(mouse_module_info)
+module_info$SM_id <- as.numeric(module_info$SM_id)
+for (i in 1:22) {
+  print(paste0("SM",i," : ", as.character(length(which(supermodules == paste0("SM",i))))))
+  print(length(which(long$SM == paste0("SM",i)))/42025 == length(which(supermodules == paste0("SM",i))))
+}  # vérif attribution des modules au supermodules
+```
+
+
+```{r}
+theme_CA <- function (base_size = 11, base_family = "", base_line_size = base_size/22, 
+                      base_rect_size = base_size/22) 
+{
+  
+  theme_bw(base_size = base_size, base_family = base_family, 
+           base_line_size = base_line_size, base_rect_size = base_rect_size) %+replace% 
+    theme(panel.border = element_rect(fill = NA, colour = "black", 
+                                      linewidth = rel(1)), panel.grid.major = element_blank(),
+          plot.title = element_text(size=10), 
+          panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", linewidth = rel(1)), legend.key = element_blank(), 
+          strip.background = element_rect(fill = "white", colour = "black", 
+                                          linewidth = rel(2)), complete = TRUE)
+}
+
+
+gr <- list()
+mod <- c(seq(1,2,1), seq(5,11,1), seq(13,18,1), seq(20,22,1))
+for (i in mod) {
+  data_int <- subset(long, SM == paste0("SM",i))
+  gr[[i]] <- ggplot(data_int, aes(x=modules, y=fluxes)) + geom_boxplot() + theme_CA() + ggtitle(paste0("SM",i)) + ylab("Fluxes (*10^3)")
+  # plot(gr[[i]])
+  # png(paste0("/Users/Pin-Pin/2023/Results/23_01/Kurd6_531_metabo/y_flux_SM",i,".png"))
+  # plot(gr[[i]])
+  # dev.off()
+}
+
+print(gr)
+```
+
+### Histograme des flux 
+```{r}
+my_palette <- rev(my_palette)
+tg_ids <- as.integer(str_remove(string = resume$module, pattern = "^M_"))
+sel <- str_c("M-", as.character(tg_ids))
+which(rownames(dt_c0) %in% sel)
+
+dt <- dt_c0[which(rownames(dt_c0) %in% sel),]
+dim(dt)
+```
+
+
+```{r}
+if(length(tg_ids) > 0){    # Vérification mais pas de "else"
+   for (jj in 1:length(tg_ids)) {
+    xxx <- dt[jj, ] 
+    final_df <- data.frame(var = paste('X', 1:length(xxx), sep=''),  # le même que plus haut
+                       flux = xxx,
+                       day = yyy)
+    order <- rev(c("D0", "D4", "D7", "D10", "D14", "D21", "D32"))     ######################## verif D
+    final_df <- transform(final_df, day = factor(day, levels = order))
+    title <- mouse_module_info[rownames(mouse_module_info)[tg_ids[jj]], 'M_name'] # récupère le noms du module
+    aa <- ggplot(final_df, aes(x = flux, y = day, fill = day)) +
+      geom_density_ridges() +
+      theme_ridges() +
+      theme(legend.position = 'none') +
+      ggtitle(title) +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      scale_fill_manual(values = my_palette) + 
+      xlab("Flux (*10^3)") +
+      geom_vline(xintercept = median(final_df$flux))
+    i <- str_replace(rownames(dt)[jj], "-", "_")
+    data_int <- subset(long, modules == i)
+    titl <- as.character(length(which(data_int$fluxes < quantile(data_int$fluxes, 0.25) - 1.5 * IQR(data_int$fluxes) | data_int$fluxes > quantile(data_int$fluxes, 0.75) + 1.5 * IQR(data_int$fluxes))))
+    bb <- ggplot(data_int, aes(x=modules, y=fluxes)) + geom_boxplot() + theme_CA() + ggtitle(paste0("# outliers = ", titl)) + ylab("Flux (*10^3)") + theme(axis.title.x = element_blank(), plot.title = element_text(size=5)) + stat_summary(fun = mean, geom = "point", shape = 18, size = 2.5, color = "#FC4E07")
+    graph <- ggdraw() + 
+  draw_plot(aa, 0, 0, 0.8, 1) +
+  draw_plot(bb, 0.8, 0, 0.2, 0.9)
+    plot(graph)
+    # png(paste0("/Users/Pin-Pin/2023/Results/23_01/Kurd6_531_metabo/z_flux_", as.character(rownames(dt)[jj]), ".png"))
+    # plot(graph)
+    # dev.off()
+   }
+}
+```
+
+## heatmap 
+```{r}
+mat <- data.matrix(predFlux)
+coul <- c("#E0E0E0", "#CCFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999")  # 7 col car 7D
+coul11 <- c(coul, "#FAE1C7", "#000000", "#FF8000", "#FAA4A4", "#d18975", "#2d543d", "#ff0055", "#5DA5DA", "#B276B2", "#F17CB0", "#009E73", "#F0E442", "#D55E00")  #11 couleurs en ajouter en fct du nm de SM
+cell_group <- as.numeric(factor(as.factor(yyy), levels = order))
+colSide <- coul[cell_group]
+module_group <- as.numeric(factor(as.factor(supermodules), c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21", "SM22")))   #SM a modif en fct des resultats
+colMod <- coul11[module_group]
+
+## Gradient colors
+brek <- c(min(mat), 0, 1, 1.5, 2, 2.5, 3, 4, 5, 10, 100, max(mat))
+hm.colors = c("#00CCCC", "#FFFFFF", "#FFCCCC", "#FF9999", "#FF6666", "#FF3333", "#FF0000", "#CC0000", "#990000", "#660000", "#000000")
+
+## Heatmap
+heatmap.2(mat, trace = 'none', breaks = brek, col = hm.colors, RowSideColors=colSide, ColSideColors=colMod, margins=c(0.5,0.5), key = TRUE, symkey = FALSE, density.info = 'none')
+legend(0,0.5, legend=order, fill=coul, cex=0.7)
+legend(0.37,1, legend=c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21", "SM22"), fill=coul11, cex = 0.6, ncol =7)
+```  
+
+
+### Suppression des modules blanc sur heatmap 
+```{r}
+# View(mat)
+# summary(mat)
+mat_2<-mat
+# On cherche à id les 9 modules bleu et les 4 modules blanc pour les supprimer
+# mean < 0 : 47 / 56 / 60 / 108 / 122 / 129 / 142 / 145   (8)
+# mean < 1 : 6 / 11 / 28 / 125 / 169                      (5)
+
+colnames(mat)
+a <- mat_2[,c(5,8,10,36,55)]
+colnames(a)
+mat_2 <- mat_2[,-c(5,8,10,36,55)]
+colnames(mat_2)
+
+supermodules <- mouse_module_info[colnames(mat_2),7]
+supermodules <- str_c(rep("SM", 50), str_trim(supermodules, side = "left"))
+
+coul <- c("#E0E0E0", "#CCFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999")  # 7 col car 7D
+coul11 <- c(coul, "#FAE1C7", "#000000", "#FF8000", "#FAA4A4", "#d18975", "#2d543d", "#ff0055", "#5DA5DA", "#B276B2", "#F17CB0", "#D55E00")  #17 couleurs en ajouter en fct du nm de SM  ## 20 COLORS  # , "#009E73", "#F0E442"
+cell_group <- as.numeric(factor(as.factor(yyy), levels = order))
+colSide <- coul[cell_group]
+module_group <- as.numeric(factor(as.factor(supermodules), c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21")))   #SM a modif en fct des resultats
+colMod <- coul11[module_group]
+
+## Gradient colors
+brek <- c(min(mat), 0, 1, 1.5, 2, 2.5, 3, 4, 5, 10, 100, max(mat))
+hm.colors = c("#00CCCC", "#FFFFFF", "#FFCCCC", "#FF9999", "#FF6666", "#FF3333", "#FF0000", "#CC0000", "#990000", "#660000", "#000000")
+
+## Heatmap
+heatmap.2(mat_2, trace = 'none', breaks = brek, col = hm.colors, RowSideColors=colSide, ColSideColors=colMod, margins=c(0.5,0.5), key = TRUE, symkey = FALSE, density.info = 'none')
+legend(0,0.5, legend=order, fill=coul, cex=0.7)
+legend(0.37,1, legend= c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21"), fill=coul11, cex = 0.6, ncol =7)
+```
+
+
+### Suppression des modules BLEU sur heatmap 
+```{r}
+# On cherche à id les 9 modules bleu et les 4 modules blanc pour les supprimer
+# mean < 0 : 47 / 56 / 60 / 108 / 122 / 129 / 142 / 145   (8)
+# mean < 1 : 6 / 11 / 28 / 125 / 169                      (5)
+
+colnames(mat_2)
+a <- mat_2[,c(11, 14, 17, 23, 32, 34, 39, 41)]
+colnames(a)
+mat_2 <- mat_2[,-c(11, 14, 17, 23, 32, 34, 39, 41)]
+colnames(mat_2)
+
+supermodules <- mouse_module_info[colnames(mat_2),7]
+supermodules <- str_c(rep("SM", 42), str_trim(supermodules, side = "left"))
+
+coul <- c("#E0E0E0", "#CCFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999")  # 7 col car 7D
+coul11 <- c(coul, "#FAE1C7", "#000000", "#FF8000", "#FAA4A4", "#d18975", "#2d543d", "#ff0055", "#5DA5DA", "#B276B2", "#F17CB0", "#D55E00")  #17 couleurs en ajouter en fct du nm de SM  ## 20 COLORS  # , "#009E73", "#F0E442"
+cell_group <- as.numeric(factor(as.factor(yyy), levels = order))
+colSide <- coul[cell_group]
+module_group <- as.numeric(factor(as.factor(supermodules), c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21")))   #SM a modif en fct des resultats
+colMod <- coul11[module_group]
+
+## Gradient colors
+brek <- c(min(mat), 0, 1, 1.5, 2, 2.5, 3, 4, 5, 10, 100, max(mat))
+hm.colors = c("#00CCCC", "#FFFFFF", "#FFCCCC", "#FF9999", "#FF6666", "#FF3333", "#FF0000", "#CC0000", "#990000", "#660000", "#000000")
+
+## Heatmap
+heatmap.2(mat_2, trace = 'none', breaks = brek, col = hm.colors, RowSideColors=colSide, ColSideColors=colMod, margins=c(0.5,0.5), key = TRUE, symkey = FALSE, density.info = 'none')
+legend(0,0.5, legend=order, fill=coul, cex=0.7)
+legend(0.37,1, legend= c("SM1", "SM2", "SM5", "SM6", "SM7", "SM8", "SM9", "SM10", "SM11", "SM13", "SM14", "SM15", "SM16", "SM17", "SM18", "SM20", "SM21"), fill=coul11, cex = 0.6, ncol =7)
+```
+
+## Histograme des flux finaux 
+```{r}
+mat_2 <- mat_2[,-c(8, 14, 34)]  ## Elimination des modules 37/58/146
+
+my_palette <- rev(my_palette)
+name_mod_2 <- colnames(mat_2)
+tg_ids_2 <- as.integer(str_remove(string = name_mod_2, pattern = "^M_"))
+sel_2 <- str_c("M-", as.character(tg_ids_2))
+which(rownames(dt_c0) %in% sel)
+
+dt_2 <- dt_c0[which(rownames(dt_c0) %in% sel_2),]
+dim(dt_2)
+```
+
+
+```{r}
+if(length(tg_ids_2) > 0){    # Vérification mais pas de "else"
+   for (jj in 1:length(tg_ids_2)) {
+    xxx <- dt_2[jj, ] 
+    final_df <- data.frame(var = paste('X', 1:length(xxx), sep=''),  # le même que plus haut
+                       flux = xxx,
+                       day = yyy)
+    order <- rev(c("D0", "D4", "D7", "D10", "D14", "D21", "D32"))     ######################## verif D
+    final_df <- transform(final_df, day = factor(day, levels = order))
+    title <- mouse_module_info[rownames(mouse_module_info)[tg_ids_2[jj]], 'M_name'] # récupère le noms du module
+    aa <- ggplot(final_df, aes(x = flux, y = day, fill = day)) +
+      geom_density_ridges() +
+      theme_ridges() +
+      theme(legend.position = 'none') +
+      ggtitle(title) +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      scale_fill_manual(values = my_palette) + 
+      xlab("Flux (*10^3)") +
+      geom_vline(xintercept = median(final_df$flux))
+    i <- str_replace(rownames(dt_2)[jj], "-", "_")
+    data_int <- subset(long, modules == i)
+    titl <- as.character(length(which(data_int$fluxes < quantile(data_int$fluxes, 0.25) - 1.5 * IQR(data_int$fluxes) | data_int$fluxes > quantile(data_int$fluxes, 0.75) + 1.5 * IQR(data_int$fluxes))))
+    bb <- ggplot(data_int, aes(x=modules, y=fluxes)) + geom_boxplot() + theme_CA() + ggtitle(paste0("# outliers = ", titl)) + ylab("Flux (*10^3)") + theme(axis.title.x = element_blank(), plot.title = element_text(size=5)) + stat_summary(fun = mean, geom = "point", shape = 18, size = 2.5, color = "#FC4E07")
+    graph <- ggdraw() + 
+  draw_plot(aa, 0, 0, 0.8, 1) +
+  draw_plot(bb, 0.8, 0, 0.2, 0.9)
+    plot(graph)
+    # png(paste0("/Users/Pin-Pin/2023/Results/23_01/Kurd6_531_metabo/z_flux_", as.character(rownames(dt)[jj]), ".png"))
+    # plot(graph)
+    # dev.off()
+   }
+}
+```
+
+
+
+
+
+## Barplot 
+```{r}
+
+coul11 <- c(coul, "#FAE1C7", "#000000", "#FF8000", "#FAA4A4", "#d18975", "#2d543d", "#ff0055", "#5DA5DA", "#B276B2", "#F17CB0", "#D55E00", "#009E73", "#F0E442")  #17 couleurs en ajouter en fct du nm de SM  ## 20 COLORS  # 
+
+ cell <- cbind(Cells(seu), seu@meta.data$orig.ident)
+colnames(cell) <- c("barcode", "dataset")
+day <- seu@meta.data$orig.ident
+cell <- as.tibble(cell)
+cell$day <- day
+cell$rna_cluster <- seu@meta.data$SCT_snn_res.0.8
+cell$flux_cluster <- seu@meta.data$FLUX_snn_res.0.5
+
+unique(cell$flux_cluster)
+unique(cell$rna_cluster)
+
+ggplot(cell, aes(x = day, fill = rna_cluster)) +
+  geom_bar() +
+  labs(title = "Repartition des cluster RNA en fonction des jours", 
+       y = "RNA clusters") +
+  theme_CA() +
+  scale_fill_manual(values = coul11) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = day, fill = flux_cluster)) +
+  geom_bar() +
+  labs(title = "Repartition des cluster de flux en fonction des jours", 
+       y = "Flux clusters") +
+  theme_CA() +  
+  scale_fill_manual(values = coul11) +
+  theme(axis.title.x = element_blank())
+```
+
+```{r}
+saveRDS(seu, "/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/results/seu__flux.RDS")
+
+```
+
+
+```{r}
+sessionInfo()
+```
+

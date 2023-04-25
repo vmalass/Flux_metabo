@@ -1,0 +1,430 @@
+---
+title: "Filtrage des goutelettes vides"
+author: "V. Malassigné"
+date: "April 3, 2023"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 28px;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Builtwith R `r getRversion()`
+
+```{r, markdown}
+library(rmarkdown)
+```
+
+
+```{r, libraries}
+suppressWarnings(library(Seurat)); suppressWarnings(library(DropletUtils))
+library(Matrix); library(tidyverse)
+library(stringr)
+```
+
+```{r, paths}
+# Input
+# obj <- "/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data"
+# Output
+res <- "/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/results/"
+```
+
+# Exemple D0
+
+## Récupération des comptes
+
+Dans la sortie de l'alignement on va récupérer à partir du répertoitre 'counts_unfiltered' :
+- spliced.mtx = comptes
+- sliced.barcodes = cellules
+- spliced.genes.txt = gènes ... of course !
+Pour reconstruire les matrices de comptes UMI d'ARN épissés.
+Par ailleurs, on fait en sorte d'utiliser la nomenclature Ensembl! pour es gènes (grâce au fichier t2g.txt) car si on ne le fait pas, comme il y a plusieurs transcrits pour un gène en nomenclature MGI, Seurat renomme les gènes correspondants en rajoutant des indices, ce qui pose problèmes dans l'analyse downstream. On se trimbale donc la nomenclature Ensembl! et on créera un fichier de traduction pour récupérer la nomenclature MGI quand on en aura besoin.
+Pour les cellules, les auteurs ont recyclé les barcodes sur plusieurs jours de collecte ce qui fait que certains ont été utilsés à différents jours. On devra les pooler et savoir de quel jour ils viennent : on rajoute donc un tag aux barcodes des cellules de la forme "_Dx", x correspondant au jour de collecte, ce qui permet d'éviter lse doublons.
+On crée une fonction 'get_mat()' pour cela :
+
+```{r, data}
+tr <- read_tsv("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/t2g.txt", col_names = c("transcript", "gene", "gene_symbol"))
+
+tr2g <- tr %>% 
+  select(-transcript) %>%   # elimination des doublons transcript
+  distinct()
+str(tr2g)
+
+# table
+get_mat <- function(dir, name = "spliced", exp = tag, tr = tr2g){     # dir = directory / 
+  dir <- normalizePath(dir, mustWork = T)  # permet de normaliser les chemins entre différente plateform (warning sinon)
+  m <- readMM(paste0(dir, "/", name, ".mtx"))
+  m <- Matrix::t(m)
+  m <- as(m, "dgCMatrix")  # donne la matrix sous forme de coordonné et ne renvoie que les cases avec des valeurs et pas celle avec les 0 (ignore les 0)
+  genes <- readLines(file(paste0(dir, "/", name, ".genes.txt")))
+  barcodes <- readLines(file(paste0(dir, "/", name, ".barcodes.txt")))
+  colnames(m) <- barcodes # col
+  rownames(m) <- genes # row
+  rownames(m) <- tr$gene[match(rownames(m), tr$gene)]
+  colnames(m) <- paste0(colnames(m), "_", rep(exp, length(colnames(m))))
+  return(m)
+}
+
+### D0 ###
+tag <- "D0"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D0 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D0)  # nb gene et nb goutelette
+
+### D4 ###
+tag <- "D4"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D4 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D4)  # nb gene et nb goutelette
+
+### D7 ###
+tag <- "D7"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D7 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D7)  # nb gene et nb goutelette
+
+### D10 ###
+tag <- "D10"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D10 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D10)  # nb gene et nb goutelette
+
+### D14 ###
+tag <- "D14"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D14 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D14)  # nb gene et nb goutelette
+
+### D21 ###
+tag <- "D21"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+D21 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D21)  # nb gene et nb goutelette
+
+### D32_1 ###
+tag <- "D32"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/D32_1/counts_unfiltered")
+D32_1 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D32_1)  # nb gene et nb goutelette
+
+### D32_2 ###
+tag <- "D32"  # nom du jour que l'on utilise
+obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/D32_2/counts_unfiltered")
+D32_2 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+
+dim(D32_2)  # nb gene et nb goutelette
+
+# ### D90 ###
+# tag <- "D90"  # nom du jour que l'on utilise
+# obj <- paste0("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/", tag , "/counts_unfiltered")
+# D90 <-  get_mat(dir = obj, name = "spliced", exp = tag, tr = tr2g)
+# 
+# dim(D90)  # nb gene et nb goutelette
+```
+
+## Filtrage des goutelettes non-vides et création de l'objet Seurat
+
+On utilise le point d'inflexion sur l coubre qui montre les comptes UMI dans les différentes gouttes de séquençage, ordonnées par compte d'UMI, justement
+
+# Filtrage des gouttes
+## D0
+```{r, filter_D0}
+tag <- "D0"
+
+tot_counts <- Matrix::colSums(D0)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D0, lower = 10)  # filters UMI inf a 10
+
+## fonction knee_plot
+knee_plot <- function(bc_rank) {
+  knee_plt <- tibble(rank = bc_rank[["rank"]],
+                     total = bc_rank[["total"]]) %>%   # somme cumulé
+    distinct() %>% 
+    dplyr::filter(total > 0)
+  annot <- tibble(inflection = metadata(bc_rank)[["inflection"]],
+                  rank_cutoff = max(bc_rank$rank[bc_rank$total > metadata(bc_rank)[["inflection"]]]))
+  p <- ggplot(knee_plt, aes(total, rank)) +
+    geom_line() +
+    geom_hline(aes(yintercept = rank_cutoff), data = annot, linetype = 2) +
+    geom_vline(aes(xintercept = inflection), data = annot, linetype = 2) +
+    scale_x_log10() +
+    scale_y_log10() +
+    annotation_logticks() +
+    labs(y = "Rank", x = "Total UMIs")
+  return(p)
+}
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D0 <- D0[, tot_counts > metadata(bc_rank)$inflection]
+dim(D0)
+
+# Création de l'objet Seurat
+SeuD0 <- CreateSeuratObject(D0)
+## metadonnées
+SeuD0@meta.data$orig.ident <- rep(tag, length(colnames(D0)))
+## sauvegarde
+saveRDS(SeuD0, paste0(res,"SeuD0.RDS"))
+```
+
+## D4
+```{r, filter_D4}
+tag <- "D4"
+
+tot_counts <- Matrix::colSums(D4)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D4, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D4 <- D4[, tot_counts > metadata(bc_rank)$inflection]
+dim(D4)
+
+# Création de l'objet Seurat
+SeuD4 <- CreateSeuratObject(D4)
+## metadonnées
+SeuD4@meta.data$orig.ident <- rep(tag, length(colnames(D4)))
+## sauvegarde
+saveRDS(SeuD4, paste0(res,"SeuD4.RDS"))
+```
+
+## D7
+```{r, filter_D7}
+tag <- "D7"
+
+tot_counts <- Matrix::colSums(D7)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D7, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D7 <- D7[, tot_counts > metadata(bc_rank)$inflection]
+dim(D7)
+
+# Création de l'objet Seurat
+SeuD7 <- CreateSeuratObject(D7)
+## metadonnées
+SeuD7@meta.data$orig.ident <- rep(tag, length(colnames(D7)))
+## sauvegarde
+saveRDS(SeuD7, paste0(res,"SeuD7.RDS"))
+```
+
+## D10
+```{r, filter_D10}
+tag <- "D10"
+
+tot_counts <- Matrix::colSums(D10)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D10, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D10 <- D10[, tot_counts > metadata(bc_rank)$inflection]
+dim(D10)
+
+# Création de l'objet Seurat
+SeuD10 <- CreateSeuratObject(D10)
+## metadonnées
+SeuD10@meta.data$orig.ident <- rep(tag, length(colnames(D10)))
+## sauvegarde
+saveRDS(SeuD10, paste0(res,"SeuD10.RDS"))
+```
+
+## D14
+```{r, filter_D14}
+tag <- "D14"
+
+tot_counts <- Matrix::colSums(D14)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D14, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D14 <- D14[, tot_counts > metadata(bc_rank)$inflection]
+dim(D14)
+
+# Création de l'objet Seurat
+SeuD14 <- CreateSeuratObject(D14)
+## metadonnées
+SeuD14@meta.data$orig.ident <- rep(tag, length(colnames(D14)))
+## sauvegarde
+saveRDS(SeuD14, paste0(res,"SeuD14.RDS"))
+```
+
+## D21
+```{r, filter_D21}
+tag <- "D21"
+
+tot_counts <- Matrix::colSums(D21)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D21, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D21 <- D21[, tot_counts > metadata(bc_rank)$inflection]
+dim(D21)
+
+# Création de l'objet Seurat
+SeuD21 <- CreateSeuratObject(D21)
+## metadonnées
+SeuD21@meta.data$orig.ident <- rep(tag, length(colnames(D21)))
+## sauvegarde
+saveRDS(SeuD21, paste0(res,"SeuD21.RDS"))
+```
+
+## D32_1
+```{r, filter_D32_1}
+tag <- "D32"
+
+tot_counts <- Matrix::colSums(D32_1)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D32_1, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D32_1 <- D32_1[, tot_counts > metadata(bc_rank)$inflection]
+dim(D32_1)
+
+# Création de l'objet Seurat
+SeuD32_1 <- CreateSeuratObject(D32_1)
+## metadonnées
+SeuD32_1@meta.data$orig.ident <- rep(tag, length(colnames(D32_1)))
+## sauvegarde
+saveRDS(SeuD32_1, paste0(res,"SeuD32_1.RDS"))
+```
+
+## D32_2
+```{r, filter_D32_2}
+tag <- "D32"
+
+tot_counts <- Matrix::colSums(D32_2)
+summary(tot_counts)  # idée de la disperssion
+
+bc_rank <- barcodeRanks(D32_2, lower = 10)  # filters UMI inf a 0
+
+knee_plot(bc_rank)
+
+metadata(bc_rank)$inflection   # point d'inflection
+
+D32_2 <- D32_2[, tot_counts > metadata(bc_rank)$inflection]
+dim(D32_2)
+
+# Création de l'objet Seurat
+SeuD32_2 <- CreateSeuratObject(D32_2)
+## metadonnées
+SeuD32_2@meta.data$orig.ident <- rep(tag, length(colnames(D32_2)))
+## sauvegarde
+saveRDS(SeuD32_2, paste0(res,"SeuD32_2.RDS"))
+```
+
+## D90
+```{r, filter_D90}
+# tag <- "D90"
+# 
+# tot_counts <- Matrix::colSums(D90)
+# summary(tot_counts)  # idée de la disperssion
+# 
+# bc_rank <- barcodeRanks(D90, lower = 10)  # filters UMI inf a 0
+# 
+# knee_plot(bc_rank)
+# 
+# metadata(bc_rank)$inflection   # point d'inflection
+# 
+# D90 <- D90[, tot_counts > metadata(bc_rank)$inflection]
+# dim(D90)
+# 
+# # Création de l'objet Seurat
+# SeuD90 <- CreateSeuratObject(D90)
+# ## metadonnées
+# SeuD90@meta.data$orig.ident <- rep(tag, length(colnames(D90)))
+# ## sauvegarde
+# saveRDS(SeuD90, paste0(res,"SeuD90.RDS"))
+```
+
+
+# Merge des objets Seurat
+## Merge D32
+```{r, merge_D32}
+SeuD32 <- merge(SeuD32_1, SeuD32_2)
+dim(SeuD32)
+unique(SeuD32$orig.ident)
+
+saveRDS(SeuD32, paste0(res,"SeuD32.RDS"))
+```
+
+
+## Merge all
+```{r, merge_D32}
+SeuDall <- merge(SeuD0, c(SeuD4, SeuD7, SeuD10, SeuD14, SeuD21, SeuD32))  # , SeuD90
+dim(SeuDall)
+unique(SeuDall$orig.ident)
+
+## Summary    , "D90"  , dim(SeuD90)[2]
+sum <- data.frame(exp=c("D0", "D4", "D7", "D10", "D14", "D21", "D32" ), count=c(dim(SeuD0)[2], dim(SeuD4)[2], dim(SeuD7)[2], dim(SeuD10)[2], dim(SeuD14)[2], dim(SeuD21)[2], dim(SeuD32)[2]))
+sum
+
+saveRDS(SeuDall, paste0(res,"SeuDall.RDS"))
+```
+
+
+
+
+
+Une fois cet objet créé, on peut recommencer en modifiant les tags pour D4, D7, D10, D14,  D21, D32_1 (objet Seu321), D32_1 (objet Seu322) et D90.
+
+
+
+
+# Session  Info
+```{r, session_info}
+sessionInfo()
+```
+
+
+
+
+
+

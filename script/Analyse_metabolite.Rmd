@@ -1,0 +1,311 @@
+---
+title: "Analyse_metabolites"
+author: "Malassigne_Victor"
+date: "4/19/2023"
+output:
+    html_document:
+    toc: yes
+    toc_depth: 3
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 28px;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+}
+
+</style>
+
+
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(tinytex)
+suppressWarnings(library(Matrix))
+suppressWarnings(library(Seurat))
+library(rstatix)
+library(ggpubr)
+library(reshape)
+library(ggridges)
+library(clustree)
+library(dplyr)
+```
+
+
+```{r}
+options("digits" =4)
+
+coul <- c("#E0E0E0", "#FFFF99", "#CCFF99", "#00CC00", "#66FFFF","#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999","#FF0000")
+coul11 <- c(coul, "#FAE1C7", "#000000", "#FF8000", "#FAA4A4", "#d18975", "#2d543d", "#ff0055", "#5DA5DA", "#B276B2", "#F17CB0", "#009E73", "#F0E442", "#D55E00")  #11 couleurs en ajouter en fct du nm de SM
+
+my_palette = c("D0"= "#E0E0E0",
+               "D4"= "#ccFF99",
+               "D7"= "#0066CC",
+               "D10"= "#006633",
+               "D14"= "#FF99FF",
+               "D21"= "#994C00",
+               "D32"= "#FF9999",
+               "D90"= "#FF0000"
+               )
+
+theme_CA <- function (base_size = 11, base_family = "", base_line_size = base_size/22, 
+                      base_rect_size = base_size/22) 
+{
+  
+  theme_bw(base_size = base_size, base_family = base_family, 
+           base_line_size = base_line_size, base_rect_size = base_rect_size) %+replace% 
+    theme(panel.border = element_rect(fill = NA, colour = "black", 
+                                      linewidth = rel(1)), panel.grid.major = element_blank(),
+          plot.title = element_text(size=10), 
+          panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", linewidth = rel(1)), legend.key = element_blank(), 
+          strip.background = element_rect(fill = "white", colour = "black", 
+                                          linewidth = rel(2)), complete = TRUE)
+}
+```
+
+
+```{r}
+seu <- readRDS("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/results/seu__flux.RDS")
+
+metabolite <- read.csv("/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/Results_scFEA/mouse_balance_gut.csv", header = T, row.names = 1)
+```
+
+```{r}
+metabolite <- data.matrix(metabolite)
+metabolite0 <- t(metabolite)
+seu[['METABOLITES']] <- CreateAssayObject(counts = metabolite0)
+DefaultAssay(seu) <- 'METABOLITES'
+seu
+```
+
+## Profils de concentrations
+```{r}
+day <- seu@meta.data$orig.ident
+metabolite <- as_tibble(metabolite)
+metabolite$day <- day
+metabolite <- relocate(metabolite, day, .before = AMP)
+
+dt_c0 <- as.matrix(seu@assays$METABOLITES@counts)
+yyy <- seu@meta.data$orig.ident 
+levels(as.factor(seu@meta.data$orig.ident))
+```
+
+
+```{r}
+coul_rev <- rev(coul)
+for (jj in 1:nrow(dt_c0)) {
+    xxx <- dt_c0[jj, ] 
+    final_df <- data.frame(var = paste('X', 1:length(xxx), sep=''),  # le même que plus haut
+                       meta = xxx,
+                       day = yyy)
+    order <- rev(c("D0", "D3", "D4", "D5", "D6", "D7", "D10", "D14", "D21", "D32", "D90"))
+    final_df <- transform(final_df, day = factor(day, levels = order))
+    title <- rownames(dt_c0)[jj] # récupère le noms du module
+    aa <- ggplot(final_df, aes(x = meta, y = day, fill = day)) +
+      geom_density_ridges() +
+      theme_ridges() +
+      theme(legend.position = 'none') +
+      ggtitle(title) +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      scale_fill_manual(values = coul_rev) + 
+      xlab("Concentrations") +
+      geom_vline(xintercept = median(final_df$meta))
+    plot(aa)
+   }
+```
+
+
+
+
+## Cinétique
+```{r}
+means <- metabolite %>%
+    group_by(day) %>%
+    summarise(across(everything(), mean, na.rm= TRUE)) %>%
+    t()
+means <- cbind(rownames(means), means)
+colnames(means) <- as.character(means[1,])
+colnames(means)[1] <- "metabolites"
+means <- means[-1,]
+means <- as_tibble(means)
+means
+
+maxi <-  c()
+for (i in 1:70) {
+  maxi <- c(maxi, max(as.numeric(means[i, 2:8])))
+}
+mini <-  c()
+for (i in 1:70) {
+  mini <- c(mini, min(as.numeric(means[i, 2:8])))
+}
+delta <- maxi - mini
+means$conc_min <- mini
+means$conc_max <- maxi
+means$conc_delta <- delta
+means
+
+means <- arrange(means, desc(conc_delta))
+ggplot(means, aes(conc_delta)) + geom_dotplot() + scale_x_log10()
+```
+
+```{r}
+means_2 <- filter(means, conc_delta > 1e-3) ## Reste 32 métabolites
+```
+
+## Profils de concentrations finaux
+```{r}
+T_F <- rownames(dt_c0) %in% means_2$metabolites
+dt <- dt_c0[T_F == T,]
+coul_rev <- rev(coul)
+for (jj in 1:nrow(dt)) {
+    xxx <- dt[jj, ] 
+    final_df <- data.frame(var = paste('X', 1:length(xxx), sep=''),  # le même que plus haut
+                       meta = xxx,
+                       day = yyy)
+    order <- rev(c("D0", "D3", "D4", "D5", "D6", "D7", "D10", "D14", "D21", "D32"))
+    final_df <- transform(final_df, day = factor(day, levels = order))
+    title <- rownames(dt)[jj] # récupère le noms du module
+    aa <- ggplot(final_df, aes(x = meta, y = day, fill = day)) +
+      geom_density_ridges() +
+      theme_ridges() +
+      theme(legend.position = 'none') +
+      ggtitle(title) +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      scale_fill_manual(values = coul_rev) + 
+      xlab("Concentrations") +
+      geom_vline(xintercept = median(final_df$meta))
+    plot(aa)
+   }
+```
+
+
+
+## Clustering
+```{r}
+seu <- FindVariableFeatures(seu, selection.method = "vst", verbose = F)
+seu 
+seu <- ScaleData(seu, features = rownames(seu), assay = 'METABOLITES', verbose = F)
+seu <- RunPCA(seu, features = VariableFeatures(object = seu), reduction.name = 'pca.metabo', verbose = F)
+```
+
+
+```{r}
+DimPlot(seu, dims = 1:2,reduction = "pca.metabo", group.by = "orig.ident", label = T)
+ElbowPlot(seu, ndims = 30, reduction = 'pca.metabo')   # 9 dim
+```
+
+
+# Clustree and clusterization  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+seu <- FindNeighbors(seu, dims = 1:9, reduction = 'pca.metabo', verbose = F, assay = 'METABOLITES')
+seu <- FindClusters(seu , graph.name = 'METABOLITES_snn', verbose = F, resolution = seq(0,1,0.1))
+
+clustree(seu, prefix = "METABOLITES_snn_res.") +
+  ggtitle(label = "Clustree metabolites avec 9 CP")
+
+seu <- RunUMAP(seu, dims = 1:9, assay = 'METABOLITES', reduction = 'pca.metabo', reduction.name = "umap.metabo", verbose = F)
+seu <- FindClusters(seu , graph.name = 'METABOLITES_snn', verbose = F, resolution = 0.3)
+```
+
+
+```{r}
+seu <- RunUMAP(seu, dims = 1:9, assay = 'METABOLITES', reduction = 'pca.metabo', reduction.name = "umap.metabo", verbose = F)
+seu <- FindNeighbors(seu, dims = 1:9, reduction = 'pca.metabo', verbose = F, assay = 'METABOLITES')
+seu <- FindClusters(seu , graph.name = 'METABOLITES_snn', verbose = F)
+```
+
+
+```{r}
+DimPlot(seu, reduction = "umap.metabo", label = T, label.box = T, group.by = "METABOLITES_snn_res.0.3")
+DimPlot(seu, reduction = "umap.metabo", label = T, label.box = T, group.by = "orig.ident")
+DimPlot(seu, reduction = "umap", label = T, label.box = T, group.by = "METABOLITES_snn_res.0.3")
+```
+
+
+## Barplot
+```{r}
+cell <- cbind(Cells(seu), seu@meta.data$orig.ident)
+colnames(cell) <- c("barcode", "dataset")
+day <- seu@meta.data$orig.ident
+cell <- as_tibble(cell)
+cell$day <- day
+cell$rna_cluster <- seu@meta.data$SCT_snn_res.0.8
+cell$flux_cluster <- seu@meta.data$FLUX_snn_res.0.5
+cell$metabo_cluster <- seu@meta.data$METABOLITES_snn_res.0.3
+
+unique(cell$flux_cluster)
+unique(cell$rna_cluster)
+unique(cell$metabo_cluster)
+
+ggplot(cell, aes(x = day, fill = rna_cluster)) +
+  geom_bar() +
+  labs(title = "Repartition des cluster RNA en fonction des jours", 
+       y = "RNA clusters") +
+  theme_CA() +
+  scale_fill_manual(values = coul11) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = rna_cluster, fill = day)) +
+  geom_bar() +
+  labs(title = "Repartition des jours dans les clusters RNA", 
+       y = "Jour") +
+  theme_CA() +
+  scale_fill_manual(values = my_palette) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = day, fill = flux_cluster)) +
+  geom_bar() +
+  labs(title = "Repartition des cluster de flux en fonction des jours", 
+       y = "Flux clusters") +
+  theme_CA() +  
+  scale_fill_manual(values = coul11) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = flux_cluster, fill = day)) +
+  geom_bar() +
+  labs(title = "Repartition des jours dans les clusters de flux", 
+       y = "Jour") +
+  theme_CA() +
+  scale_fill_manual(values = my_palette) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = day, fill = metabo_cluster)) +
+  geom_bar() +
+  labs(title = "Repartition des cluster de flux en fonction des jours", 
+       y = "Flux clusters") +
+  theme_CA() +  
+  # scale_fill_manual(values = coul11) +
+  theme(axis.title.x = element_blank())
+
+ggplot(cell, aes(x = metabo_cluster, fill = day)) +
+  geom_bar() +
+  labs(title = "Repartition des jours dans les clusters de métabolite", 
+       y = "Jour") +
+  theme_CA() +
+  scale_fill_manual(values = my_palette) +
+  theme(axis.title.x = element_blank())
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

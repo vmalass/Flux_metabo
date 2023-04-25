@@ -1,0 +1,457 @@
+---
+title: "Merge/MT_genes_/Nomr/PC/UMP"
+author: "V. Malassigné"
+date: "April , 2023"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 28px;
+}
+h1 { /* Header 1 */
+  font-size: 18px;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Builtwith R `r getRversion()`
+
+```{r, markdown}
+library(rmarkdown)
+```
+
+
+```{r, libraries}
+suppressWarnings(library(Seurat))
+suppressWarnings(library(DropletUtils))
+library(Matrix)
+library(tidyverse)
+library(sctransform)
+library(clustree)
+library(cowplot)
+
+setwd("~/Documents/Master_2/Projet_long/Flux_metabo")
+```
+
+```{r, paths}
+# Input
+obj <- "/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/data/"
+# Output
+res <- "/Users/victor/Documents/Master_2/Projet_long/Flux_metabo/results/"
+
+my_palette = c("D0"= "#E0E0E0",
+               "D4"= "#ccFF99",
+               "D7"= "#0066CC",
+               "D10"= "#006633",
+               "D14"= "#FF99FF",
+               "D21"= "#994C00",
+               "D32"= "#FF9999",
+               "D90"= "#FF0000"
+               )
+```
+
+Je te mets quelques étapes pour ne pas avoir à les retaaper
+Je suppose que tous es objets seu0, seu4 etc... sont créés et chargés.
+
+## Filtrage gène mitochondriau
+```{r, outline}
+Seu <- readRDS(paste0(res, "SeuDall.RDS"))
+dim(Seu)
+unique(Seu$orig.ident)
+colnames(Seu[,30000])
+# Sélection des gènes exprimés dans au moins 20 cellules
+seu <- CreateSeuratObject(Seu@assays$RNA@counts, min.cells = 20)
+seu@meta.data$orig.ident <- Seu@meta.data$orig.ident
+dim(seu) ## elimination de 40 933 genes
+
+# Création des listes de gènes mitochondriaux et ribosomaux, avec la nomenclature ensembl!
+## Fichiers des t2g
+tr <- read_tsv(paste0(obj, "t2g.txt"), col_names = c("transcript", "gene", "gene_symbol"))
+## Sorties des transcrites et unicité de la nomenclature ensembl!
+genes <- tr %>%
+select(-transcript) %>%
+select(1:2) %>%
+distinct()
+str(genes)
+
+
+# Gènes mitochondriaux : On cherche les gènes contenant le pattern "^mt-"
+mito <- filter(genes, grepl("^mt", gene_symbol))
+mt <- as.data.frame(mito)
+str(mt)  # 37 genes
+# Gènes ribosomaux : On cherche les gènes contenant le pattern "^Rp[sl]"
+ribo <- filter(genes, grepl("^Rp[sl]", gene_symbol))
+rb <- as.data.frame(ribo)
+str(rb)  # 423 genes
+
+# combien sont exprimés dans nos cellues ?
+mt <- mt[which(mt[,1] %in% rownames(seu)),]
+dim(mt) # 34 genes
+rb <- rb[which(rb[,1] %in% rownames(seu)),]
+dim(rb) # 300 genes
+
+# Calcul des % et ajout aux données
+seu[["percent.mt"]] <- PercentageFeatureSet(seu, features = mt[,1])
+seu[["percent.ribo"]] <- PercentageFeatureSet(seu, features = rb[,1])
+
+# Plots avant filtrage (Rq on ne filtre que sur les mitochondriaux)
+plot1 <- FeatureScatter(seu, feature1 = "nFeature_RNA", feature2 = "percent.mt", pt.size = 0.3)
+plot2 <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "percent.mt", pt.size = 0.3)
+plot1 + plot2
+plot3 <- FeatureScatter(seu, feature1 = "nFeature_RNA", feature2 = "nCount_RNA", pt.size = 0.3) 
+plot3 # Pour voir si image habituelle
+plot4 <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "percent.ribo", pt.size = 0.3)
+plot4 # Pour voir si image habituelle
+
+# On va filtrer trop large pour que tu puisses voir quels problèmes cela pose en aval (je prends 30% comme exemple, car je ne peux pas voir les 2 graphes ci-dessus).
+## Filtrage
+seu <- subset(seu, subset = percent.mt < 4)
+## Combien de cellules restantes ?
+dim(seu) # Donnera le nombre de celules restantes
+## Quelle répartition ?
+(table(seu@meta.data$orig.ident)[]) 
+## Vérification graphique
+plot1 <- FeatureScatter(seu, feature1 = "nFeature_RNA", feature2 = "percent.mt", pt.size = 0.3)
+plot2 <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "percent.mt", pt.size = 0.3)
+plot1 + plot2
+plot3 <- FeatureScatter(seu, feature1 = "nFeature_RNA", feature2 = "nCount_RNA", pt.size = 0.3) 
+plot3 # Pour voir si image habituelle
+plot4 <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "percent.ribo", pt.size = 0.3)
+plot4
+```
+
+## Normalisation SCT
+```{r, outline2}
+# Normalisation
+## Rqs : Sctransform est une normalisation adaptée au single cell et publiée dans Hafemeister, C. & Satija, R. Normalization and variance stabilization of single-cell RNA-seq data using regularized negative binomial regression. Genome Biol 20, 296 (2019).
+## le paramètre variable.features.rv.th = 1.3, permet de choisir un nombre optimal de gènes hyper variables (HVG) pour l'analyse en aval
+## Normalisation
+seu <- suppressWarnings(SCTransform(seu, assay = "RNA", variable.features.n = NULL, variable.features.rv.th = 1.3))
+
+seu # indique le nombre de HVG (pour info environ 4700 dans les données rate)
+
+# HVG (vérification que les 20 top HVG sont bien attendus pur es CD8 : ccl5, cd74, gzmA, gzmB, ccl4, Malat1, Hist1h2ap, ifng, ...)
+top20 <- head(VariableFeatures(seu), 20)
+top20_trad <-  filter(genes, grepl(top20[1], gene))  ## grepl ne fct pas en colone
+for (i in 2:length(top20)) {
+  top20_trad <- bind_rows(top20_trad, filter(genes, grepl(top20[i], gene)))    ## a regarder peut être problème
+}
+top20_trad$gene_symbol
+```
+
+## Visualisation / controle
+```{r, outline3}
+# Vérification graphique
+## Profondeur de séquençage
+count_depth <- as.data.frame(seu@meta.data$nCount_RNA) # Profondeur avant SCTransform
+count_depth[,2] <- rownames(count_depth)
+colnames(count_depth) <-  c("count_depth","cells")
+count_depth$Day <- as.factor(seu@meta.data$orig.ident)
+count_depth$count_SCT <- seu@meta.data$nCount_SCT # Profondeur après SCTransform
+count_depth[,2] <- rownames(count_depth)
+order <- c("D0", "D4", "D7", "D10", "D14", "D21", "D32_1", "D32_2")  #, "D90"
+count_depth <- transform(count_depth, Day = factor(Day, levels = order))
+### plot (les coueurs sont choisies pour matcher les données de la rate)
+### profondeur avant
+p <- ggplot(data=count_depth, aes(x=cells, y=count_depth)) + 
+  geom_point(aes(color = Day)) +
+  scale_color_manual(values = c("#E0E0E0", "#ccFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999", "#66FFFF", "#FF0000")) +  # code couleur à conserver pdt l'analyse car identique à la rate
+  theme(axis.text.x = element_text(size=1, angle=90)) +
+  facet_wrap(~Day, scales='free_x')  + theme(axis.text.x = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "grey"))
+p
+### profondeur après (on doit observer une "harmonisation" des données)
+p1 <- ggplot(data=count_depth, aes(x=cells, y=count_SCT)) + 
+  geom_point(aes(color = Day)) +
+  scale_color_manual(values = c("#E0E0E0", "#ccFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999", "#66FFFF", "#FF0000")) +
+  theme(axis.text.x = element_text(size=1, angle=90)) +
+  facet_wrap(~Day, scales='free_x')  + theme(axis.text.x = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "grey"))
+p1
+
+## Nbre de gènes par cellule
+nb_gene <- as.data.frame(seu@meta.data$nFeature_RNA) # Nb gènes avant SCTransform
+nb_gene[,2] <- colnames(seu) 
+colnames(nb_gene) <-c("number_of_expressed_genes","cells")
+nb_gene$Day <- seu@meta.data$orig.ident
+nb_gene$ngene_SCT <- seu@meta.data$nFeature_SCT # Nb gènes après SCTransform
+nb_gene <- transform(nb_gene, Day = factor(Day, levels = order))
+### plot 
+### Nbre de gènes avant
+q <- ggplot(data=nb_gene, aes(x  = cells, y = number_of_expressed_genes)) + 
+  geom_point(aes(color = Day)) +
+  scale_color_manual(values = c("#E0E0E0", "#ccFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999", "#66FFFF", "#FF0000")) +
+  theme(axis.text.x = element_text(size=1, angle=90)) +
+  facet_wrap(~Day, scales='free_x')  + theme(axis.text.x = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "grey")) 
+q
+### Nbre de gènes après (on doit observer une "harmonisation" des données)
+q1 <- ggplot(data=nb_gene, aes(x=cells, y=ngene_SCT)) + 
+  geom_point(aes(color = Day)) +
+  scale_color_manual(values = c("#E0E0E0", "#ccFF99", "#0066CC", "#006633", "#FF99FF", "#994C00","#FF9999", "#66FFFF", "#FF0000")) +
+  theme(axis.text.x = element_text(size=1, angle=90)) +
+  facet_wrap(~Day, scales='free_x')  + theme(axis.text.x = element_blank(), panel.border = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "grey")) 
+q1
+
+## Analyse de la moyenne des résidus
+ggplot(seu@assays$SCT@SCTModel.list$model1@feature.attributes, aes(residual_mean)) +   ## centré sur 0 et trainé sur la D  NORMALE
+  geom_histogram(binwidth = 0.01) + 
+  scale_x_continuous(limits = c(-1,1)) # devrait être centrée sur 0, avec un léger"skewing" à droite
+
+## Analyse de la variance des résidus
+ggplot(seu@assays$SCT@SCTModel.list$model1@feature.attributes, aes(residual_variance)) +  ## centré sur 1 et trainé sur la D NORMALE mais cellule crevade font un épaulement => donc revenir en arrière et remplacent le 30% de gènes mito par 5% ou autre...
+  geom_histogram(binwidth = 0.01) + 
+  scale_x_continuous(limits = c(0,2))
+
+
+
+# Devrait être centrée sur 1, avec un léger"skewing" à droite.
+# Normalement c'est ici, que les cellules crevardes se voient sous a forme d'un épaulement de la courbe à gauche.
+#  Donc ici, i faudrait refaire le filtrage des gènes mitochondriaux comme à la ligne 103, avec la bonne valeur (il faudra que je jette uncoup  d'oeil pour t'aider à seuiller)
+ 
+# Une fois la variances des résidus correcte on peut passer à la suite
+```
+
+
+
+## Doublet elimination
+```{r}
+library(DoubletFinder)
+
+sweep.res.list <- suppressWarnings(paramSweep_v3(seu, PCs = 1:15, sct = TRUE))
+sweep.stat <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stat)
+pK=as.numeric(as.character(bcmvn$pK))
+BCmetric=bcmvn$BCmetric
+pK_choose = pK[which(BCmetric %in% max(BCmetric))]
+df <- as.data.frame(cbind(pK, BCmetric))
+
+par(mar=c(5,4,4,8)+1,cex.main=1.2,font.main=2)
+
+p <- ggplot(df, mapping=aes(pK, BCmetric)) + geom_point(col='blue', pch=16) + geom_line(type='b', col="blue") + geom_vline(xintercept = pK_choose, col='red', lty='dashed') + ggtitle("The BCmvn distributions") + geom_text(x = 0.15, y = 1000, label = paste0("Choose pK = ", pK_choose))
+p
+```
+
+```{r}
+nExp <- round(ncol(seu) * 0.02)  # on impose le nombre de doublet à 2%
+nExp
+
+seu_sing <- suppressWarnings(doubletFinder_v3(seu, PCs = 1:15, pN = 0.25, pK = pK_choose, nExp = nExp, reuse.pANN = FALSE, sct = TRUE))
+
+DimPlot(seu_sing, reduction = "umap", label = TRUE, group.by = "DF.classifications_0.25_0.02_625")
+
+(table(seu@meta.data$orig.ident))
+dim(seu) 
+seu <- subset(seu_sing, DF.classifications_0.25_0.02_625 == "Singlet") 
+(table(seu@meta.data$orig.ident))  # pour avoir les comptes par jour
+dim(seu) # pour avoir les comptes locaux
+```
+
+
+## Visualisation
+### PCA
+```{r, outline4}
+#PCA
+## 1. Avec Seurat
+seu <- RunPCA(seu)
+## graphes pour regarder ce que PC1, 2 et 3 séparent comme jours
+DimPlot(seu, reduction = "pca", label = TRUE, group.by = "orig.ident")
+DimPlot(seu, reduction = "pca", label = TRUE, group.by = "orig.ident", dims = c(2,3))
+
+## Si tu veux regarder ce que contiennent les axes (on devrait rouver des gèens habituels de la diférenciation cd8, GzmB, Malt1, gzmA, Ccl5, cd74, ccl4, ...)
+print(seu[["pca"]], dims = 1:5, nfeatures = 5) # les 5 top genes (nfeatures) pour les 5 premiers PC (dims)
+## Et pour les traduire
+pc1 <- c("ENSMUSG00000023057.5", "ENSMUSG00000032083.8", "ENSMUSG00000053964.17", "ENSMUSG00000032454.9", "ENSMUSG00000049382.10", "ENSMUSG00000035042.2", "ENSMUSG00000018930.3", "ENSMUSG00000023132.8", "ENSMUSG00000000982.5", "ENSMUSG00000026358.13"  # les recopier depuis les résultats au-dessus) , puis
+)
+pcaxes <- filter(genes, grepl(pc1[1], gene))
+for (i in 2:length(pc1)) {
+  pcaxes <- bind_rows(pcaxes, filter(genes, grepl(pc1[i], gene)))
+}
+pcaxes
+```
+
+
+```{r, outline5}
+VizDimLoadings(seu, dims = 1:4, reduction = "pca", nfeatures = 20)
+## Elbowplot pour le nombre de PC à conserver
+ElbowPlot(seu, ndims =  30)
+## Diverse heatmaps pour choisir encore le nombre de PCs
+## Elles représentent l'expression des 500 cellules les plus faibles et les plus fortes, pour les gènes les plus "pesants" aux 2 extrémités de chaque PC = On doit avoir la plus grosse dmacation de couleurs possibles, et on la voit diminuer le long des PC.
+DimHeatmap(seu, dims = 1:8, cells = 500, balanced = TRUE, nfeatures = 20)
+DimHeatmap(seu, dims = 9:16, cells = 500, balanced = TRUE, nfeatures = 20)
+DimHeatmap(seu, dims = 17:24, cells = 500, balanced = TRUE, nfeatures = 20)
+## et pour le faire de manière "caluclée" avec Brokenstick --> 2ème PCA (brokenstick ne sait paas utiliser celle de Seurat
+```
+
+#### PCA broken stick
+```{r, outline6}
+## 2. Avec prcomp
+### Matrice
+# library(vegan) # pour la parrallélisation, je ne suis pas sûr de la nécessite, je n'ai pas testé sans.
+mat <- GetAssayData(seu[['SCT']], slot = "counts")
+mat <- as.matrix(mat)
+str(mat)
+dim(mat)
+mat <- t(mat)
+str(mat)
+### Reduction aux HVGs
+mat <- mat[,seu@assays$SCT@var.features]
+str(mat)
+### PCA
+pca <- prcomp(mat, center = T, scale. = T)  ## Ça prend des plombes, à lancer sur la nuit.
+### Sauvegarde, pour ne pas avoir à le relancer
+saveRDS(pca, paste0(obj, "pca_prcomp_D14_1.RDS"))
+### Analyse graphique
+evplot = function(ev) {  
+  # Broken stick model (MacArthur 1957)  
+  n = length(ev)  
+  bsm = data.frame(j=seq(1:n), p=0)  
+  bsm$p[1] = 1/n  
+  for (i in 2:n) bsm$p[i] = bsm$p[i-1] + (1/(n + 1 - i))  
+  bsm$p = 100*bsm$p/n  
+  # Plot eigenvalues and % of variation for each axis  
+  op = par(mfrow=c(2,1),omi=c(0.1,0.3,0.1,0.1), mar=c(1, 1, 1, 1))  
+  barplot(ev, main="Eigenvalues", col="bisque", las=2, xlim = c(1,80), ylim = c(0,20))  
+  abline(h=mean(ev), col="red")  
+  legend("topright", "Average eigenvalue", lwd=1, col=2, bty="n")  
+  barplot(t(cbind(100*ev/sum(ev), bsm$p[n:1])), beside=TRUE,   
+      main="% variation", col=c("bisque",2), las=2, xlim = c(1,80), ylim = c(0,0.5))  
+  legend("topright", c("% eigenvalue", "Broken stick model"),   
+      pch=15, col=c("bisque",2), bty="n")  
+  par(op)  
+} 
+
+evplot(pca$sdev^2) # Attention pca$dev contient les sd, et on veut le svariances d'où le ^2
+## Les PC  à garder sont ceux qui ont la courbe bisuqe au dessus-du modèle en rouge.
+```
+
+
+```{r, outlin7}
+library(factoextra)
+
+fviz_eig(pca, addlabels = TRUE, ncp = 20)
+fviz_pca_var(pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, # Avoid text overlapping
+             select.var = list(contrib = 9),
+             alpha.var="contrib") +
+  ggtitle(label = "Contribution des variables dans les PC1 et PC2") +
+  theme_minimal()
+
+# fviz_pca_ind(pca, repel = F)
+
+
+SelectPCA <- as.data.frame(pca$x)
+
+ggplot(SelectPCA, aes(x = PC1, y = PC2)) +
+  geom_point(size = 1) 
+```
+
+### UMAP
+```{r, outline8}
+# UMAP
+## Une fois le nombre de PC déterminer, ci-dessous comme si c'était 9.
+seu <- RunUMAP(seu, dims = 1:15)   #14CP 30% 15CP 5%
+## Clustering
+seu <- FindNeighbors(seu, dims = 1:15)  # environement
+seu <- FindClusters(seu)   # kmeans
+## sauvegarde
+saveRDS(seu, paste0(res, "Seu_gut_UMAP")) # Pour éviter de revenir en arrière
+## Clusters d'expression :
+head(Idents(seu), 7) #  Affiche les 7 premières celules et leur cluster d'appartenance, les "levels donnent" le nombre de clusters trouvés
+DimPlot(seu, reduction = "umap", label = TRUE, group.by = "seurat_clusters") + ggtitle("Clusters filter 4% gene MT")
+
+
+## Graphe pour vérifier 'enchaîneent de sjours et leur homogénéité, notamment D32_1 et D32_2
+DimPlot(seu, reduction = "umap", label = TRUE, group.by = "orig.ident", cols = my_palette) + ggtitle("Pop filter 4% gene MT")
+
+```
+
+
+### Clustree and clusterization  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# seu <- FindNeighbors(seu, dims = 1:15, verbose = FALSE)
+# seu <- FindClusters(seu, 
+#                              resolution = seq(0,2.5,0.5))
+# clustree(seu, prefix = "SCT_snn_res.") + 
+#   ggtitle(label = "Clustree avec 15 CP")
+# 
+# seu <- FindClusters(seu, resolution = 0.9)
+# seu <- RunUMAP(seu, dims = 1:14, assay = "SCT")
+# DimPlot(seu, 
+#         reduction = "umap", 
+#         pt.size = 1,
+#         label = T)+
+#   ggtitle(label = paste0( "UMAP 15 CP et resolution : 0.9"))
+```
+
+## Analyse par cluster
+### Pourcentage MT
+```{r, cluster_by_cluster_gene_MT}
+nb_cluster <- 19
+list_plot <- list()
+clus <- seq(1, nb_cluster, 1)
+for (cluster in clus) {
+  seu0 <- subset(seu, idents = cluster)
+plot0 <- FeatureScatter(seu0, feature1 = "nFeature_RNA", feature2 = "percent.mt", pt.size = 0.3) + ggtitle(paste0("Cluster ", cluster))
+  list_plot[[cluster]] <- plot0
+}
+plot_grid(plotlist = list_plot[1:9], ncol = 3) 
+plot_grid(plotlist = list_plot[10:18], ncol = 3) 
+plot_grid(plotlist = list_plot[19:27], ncol = 3) 
+
+# print(list_plot)
+```
+
+## Profondeur sequençage / nb gene par cell
+```{r, profondeur_Seq_&_nb_gene_cell}
+VlnPlot(seu, features = "nCount_SCT") + 
+  labs(title = "Clusters filter 4% gene MT", y = "nCount_SCT", fill = "Cluster") + 
+  theme(axis.title.x = element_blank())
+VlnPlot(seu, features = "nFeature_SCT")  + 
+  labs(title = "Clusters filter 4% gene MT", y = "nFeature_SCT", fill = "Cluster") + 
+  theme(axis.title.x = element_blank())
+```
+
+
+```{r}
+saveRDS(seu, paste0(obj, "seu_befor_flux.RDS"))
+
+data_exp <- seu@assays$RNA@counts
+
+T_F <- genes$gene %in% rownames(data_exp)
+genes2 <- genes[T_F == T,]
+all(genes2$gene == rownames(data_exp))
+rownames(data_exp) <- genes2$gene_symbol
+
+write.csv(data_exp, file = paste0(obj, "seurat_gene_exp.csv"), row.names = T, quote = F)
+
+
+```
+
+
+
+# Session  Info
+```{r, session_info}
+sessionInfo()
+```
+
+
+
