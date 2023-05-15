@@ -112,7 +112,7 @@ for (jj in 1:nrow(dt_c0)) {
       theme(legend.position = 'none') +
       ggtitle(title) +
       theme(plot.title = element_text(hjust = 0.5)) +
-      scale_fill_manual(values = coul_rev) + 
+      scale_fill_manual(values = my_palette) + 
       xlab("Concentrations") +
       geom_vline(xintercept = median(final_df$meta))
     plot(aa)
@@ -176,7 +176,7 @@ for (jj in 1:nrow(dt)) {
       theme(legend.position = 'none') +
       ggtitle(title) +
       theme(plot.title = element_text(hjust = 0.5)) +
-      scale_fill_manual(values = coul_rev) + 
+      scale_fill_manual(values = my_palette) + 
       xlab("Concentrations") +
       geom_vline(xintercept = median(final_df$meta))
     plot(aa)
@@ -223,7 +223,7 @@ seu <- FindClusters(seu , graph.name = 'METABOLITES_snn', verbose = F)
 
 ```{r}
 DimPlot(seu, reduction = "umap.metabo", label = T, label.box = T, group.by = "METABOLITES_snn_res.0.3")
-DimPlot(seu, reduction = "umap.metabo", label = T, label.box = T, group.by = "orig.ident")
+DimPlot(seu, reduction = "umap.metabo", label = T, label.box = T, group.by = "orig.ident", cols = my_palette)
 DimPlot(seu, reduction = "umap", label = T, label.box = T, group.by = "METABOLITES_snn_res.0.3")
 ```
 
@@ -277,8 +277,8 @@ ggplot(cell, aes(x = flux_cluster, fill = day)) +
 
 ggplot(cell, aes(x = day, fill = metabo_cluster)) +
   geom_bar() +
-  labs(title = "Repartition des cluster de flux en fonction des jours", 
-       y = "Flux clusters") +
+  labs(title = "Repartition des cluster de métabolite en fonction des jours", 
+       y = "metabolite clusters") +
   theme_CA() +  
   # scale_fill_manual(values = coul11) +
   theme(axis.title.x = element_blank())

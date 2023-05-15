@@ -265,7 +265,7 @@ print(gr)
 
 ### Histograme des flux 
 ```{r}
-my_palette <- rev(my_palette)
+# my_palette <- rev(my_palette)
 tg_ids <- as.integer(str_remove(string = resume$module, pattern = "^M_"))
 sel <- str_c("M-", as.character(tg_ids))
 which(rownames(dt_c0) %in% sel)
