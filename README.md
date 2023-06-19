@@ -1,5 +1,8 @@
 # Projet long : Flux métabolique à partir de données single cell RNA-seq
 
+Dans cette étude novatrice, nous avons utilisé l'algorithme scFEA pour examiner le métabolisme des lymphocytes T CD8+ lors d'une infection virale. À partir de données de séquençage ARN à cellule unique, nous avons cartographié les profils de flux métabolique et les concentrations en métabolites pour chaque cellule. En analysant ces données, nous avons identifié des modifications significatives dans les voies métaboliques clés associées à la glycolyse et au cycle de Krebs. De plus, nous avons observé des changements dans les niveaux de concentration en métabolites. Nous mettons en évidence l'impact du métabolisme sur la réponse immunitaire des lymphocytes T CD8+. Ces résultats sont en accord avec une augmentation du métabolisme des sucres et une commutation métabolique vers la glycolyse dans les lymphocytes T CD8+ activés lors de l'infection virale, et ouvrent de nouvelles perspectives pour comprendre les mécanismes sous-jacents de la réponse immunitaire aux infections virales par une nouvelle approche informatique.
 
-## Auteurs :
-Malassigné Victor
+scFEA : N. Alghamdi et al., « A graph neural network model to estimate cell-wise metabolic flux using single-cell RNA-seq data », Genome Res., vol. 31, no 10, p. 1867‑1884, janv. 2021, doi: 10.1101/gr.271205.120.
+data : NCBI GEO (GSE131847, https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE131847)
+        N. S. Kurd et al., « Early precursors and molecular determinants of tissue-resident memory CD8+ T lymphocytes revealed by single-cell RNA sequencing », Sci. Immunol., vol. 5, no 47, p. eaaz6894, mai 2020, doi: 10.1126/sciimmunol.aaz6894.
+        
