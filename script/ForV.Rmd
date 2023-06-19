@@ -189,7 +189,7 @@ SeuD0 <- CreateSeuratObject(D0)
 ## metadonnées
 SeuD0@meta.data$orig.ident <- rep(tag, length(colnames(D0)))
 ## sauvegarde
-saveRDS(SeuD0, paste0(res,"SeuD0.RDS"))
+# saveRDS(SeuD0, paste0(res,"SeuD0.RDS"))
 ```
 
 ## D4
@@ -213,7 +213,7 @@ SeuD4 <- CreateSeuratObject(D4)
 ## metadonnées
 SeuD4@meta.data$orig.ident <- rep(tag, length(colnames(D4)))
 ## sauvegarde
-saveRDS(SeuD4, paste0(res,"SeuD4.RDS"))
+# saveRDS(SeuD4, paste0(res,"SeuD4.RDS"))
 ```
 
 ## D7
@@ -237,7 +237,7 @@ SeuD7 <- CreateSeuratObject(D7)
 ## metadonnées
 SeuD7@meta.data$orig.ident <- rep(tag, length(colnames(D7)))
 ## sauvegarde
-saveRDS(SeuD7, paste0(res,"SeuD7.RDS"))
+# saveRDS(SeuD7, paste0(res,"SeuD7.RDS"))
 ```
 
 ## D10
@@ -261,7 +261,7 @@ SeuD10 <- CreateSeuratObject(D10)
 ## metadonnées
 SeuD10@meta.data$orig.ident <- rep(tag, length(colnames(D10)))
 ## sauvegarde
-saveRDS(SeuD10, paste0(res,"SeuD10.RDS"))
+# saveRDS(SeuD10, paste0(res,"SeuD10.RDS"))
 ```
 
 ## D14
@@ -285,7 +285,7 @@ SeuD14 <- CreateSeuratObject(D14)
 ## metadonnées
 SeuD14@meta.data$orig.ident <- rep(tag, length(colnames(D14)))
 ## sauvegarde
-saveRDS(SeuD14, paste0(res,"SeuD14.RDS"))
+# saveRDS(SeuD14, paste0(res,"SeuD14.RDS"))
 ```
 
 ## D21
@@ -309,7 +309,7 @@ SeuD21 <- CreateSeuratObject(D21)
 ## metadonnées
 SeuD21@meta.data$orig.ident <- rep(tag, length(colnames(D21)))
 ## sauvegarde
-saveRDS(SeuD21, paste0(res,"SeuD21.RDS"))
+# saveRDS(SeuD21, paste0(res,"SeuD21.RDS"))
 ```
 
 ## D32_1
@@ -333,7 +333,7 @@ SeuD32_1 <- CreateSeuratObject(D32_1)
 ## metadonnées
 SeuD32_1@meta.data$orig.ident <- rep(tag, length(colnames(D32_1)))
 ## sauvegarde
-saveRDS(SeuD32_1, paste0(res,"SeuD32_1.RDS"))
+# saveRDS(SeuD32_1, paste0(res,"SeuD32_1.RDS"))
 ```
 
 ## D32_2
@@ -357,7 +357,7 @@ SeuD32_2 <- CreateSeuratObject(D32_2)
 ## metadonnées
 SeuD32_2@meta.data$orig.ident <- rep(tag, length(colnames(D32_2)))
 ## sauvegarde
-saveRDS(SeuD32_2, paste0(res,"SeuD32_2.RDS"))
+# saveRDS(SeuD32_2, paste0(res,"SeuD32_2.RDS"))
 ```
 
 ## D90
@@ -392,7 +392,7 @@ SeuD32 <- merge(SeuD32_1, SeuD32_2)
 dim(SeuD32)
 unique(SeuD32$orig.ident)
 
-saveRDS(SeuD32, paste0(res,"SeuD32.RDS"))
+# saveRDS(SeuD32, paste0(res,"SeuD32.RDS"))
 ```
 
 
@@ -406,7 +406,7 @@ unique(SeuDall$orig.ident)
 sum <- data.frame(exp=c("D0", "D4", "D7", "D10", "D14", "D21", "D32" ), count=c(dim(SeuD0)[2], dim(SeuD4)[2], dim(SeuD7)[2], dim(SeuD10)[2], dim(SeuD14)[2], dim(SeuD21)[2], dim(SeuD32)[2]))
 sum
 
-saveRDS(SeuDall, paste0(res,"SeuDall.RDS"))
+# saveRDS(SeuDall, paste0(res,"SeuDall.RDS"))
 ```
 
 

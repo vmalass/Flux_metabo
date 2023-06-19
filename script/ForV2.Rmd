@@ -228,42 +228,6 @@ ggplot(seu@assays$SCT@SCTModel.list$model1@feature.attributes, aes(residual_vari
 # Une fois la variances des résidus correcte on peut passer à la suite
 ```
 
-
-
-## Doublet elimination
-```{r}
-library(DoubletFinder)
-
-sweep.res.list <- suppressWarnings(paramSweep_v3(seu, PCs = 1:15, sct = TRUE))
-sweep.stat <- summarizeSweep(sweep.res.list, GT = FALSE)
-bcmvn <- find.pK(sweep.stat)
-pK=as.numeric(as.character(bcmvn$pK))
-BCmetric=bcmvn$BCmetric
-pK_choose = pK[which(BCmetric %in% max(BCmetric))]
-df <- as.data.frame(cbind(pK, BCmetric))
-
-par(mar=c(5,4,4,8)+1,cex.main=1.2,font.main=2)
-
-p <- ggplot(df, mapping=aes(pK, BCmetric)) + geom_point(col='blue', pch=16) + geom_line(type='b', col="blue") + geom_vline(xintercept = pK_choose, col='red', lty='dashed') + ggtitle("The BCmvn distributions") + geom_text(x = 0.15, y = 1000, label = paste0("Choose pK = ", pK_choose))
-p
-```
-
-```{r}
-nExp <- round(ncol(seu) * 0.02)  # on impose le nombre de doublet à 2%
-nExp
-
-seu_sing <- suppressWarnings(doubletFinder_v3(seu, PCs = 1:15, pN = 0.25, pK = pK_choose, nExp = nExp, reuse.pANN = FALSE, sct = TRUE))
-
-DimPlot(seu_sing, reduction = "umap", label = TRUE, group.by = "DF.classifications_0.25_0.02_625")
-
-(table(seu@meta.data$orig.ident))
-dim(seu) 
-seu <- subset(seu_sing, DF.classifications_0.25_0.02_625 == "Singlet") 
-(table(seu@meta.data$orig.ident))  # pour avoir les comptes par jour
-dim(seu) # pour avoir les comptes locaux
-```
-
-
 ## Visualisation
 ### PCA
 ```{r, outline4}
@@ -316,7 +280,7 @@ str(mat)
 ### PCA
 pca <- prcomp(mat, center = T, scale. = T)  ## Ça prend des plombes, à lancer sur la nuit.
 ### Sauvegarde, pour ne pas avoir à le relancer
-saveRDS(pca, paste0(obj, "pca_prcomp_D14_1.RDS"))
+# saveRDS(pca, paste0(obj, "pca_prcomp_D14_1.RDS"))
 ### Analyse graphique
 evplot = function(ev) {  
   # Broken stick model (MacArthur 1957)  
@@ -373,7 +337,7 @@ seu <- RunUMAP(seu, dims = 1:15)   #14CP 30% 15CP 5%
 seu <- FindNeighbors(seu, dims = 1:15)  # environement
 seu <- FindClusters(seu)   # kmeans
 ## sauvegarde
-saveRDS(seu, paste0(res, "Seu_gut_UMAP")) # Pour éviter de revenir en arrière
+# saveRDS(seu, paste0(res, "Seu_gut_UMAP")) # Pour éviter de revenir en arrière
 ## Clusters d'expression :
 head(Idents(seu), 7) #  Affiche les 7 premières celules et leur cluster d'appartenance, les "levels donnent" le nombre de clusters trouvés
 DimPlot(seu, reduction = "umap", label = TRUE, group.by = "seurat_clusters") + ggtitle("Clusters filter 4% gene MT")
@@ -430,9 +394,44 @@ VlnPlot(seu, features = "nFeature_SCT")  +
   theme(axis.title.x = element_blank())
 ```
 
+## Doublet elimination
+```{r}
+library(DoubletFinder)
+
+sweep.res.list <- suppressWarnings(paramSweep_v3(seu, PCs = 1:15, sct = TRUE))
+sweep.stat <- summarizeSweep(sweep.res.list, GT = FALSE)
+bcmvn <- find.pK(sweep.stat)
+pK=as.numeric(as.character(bcmvn$pK))
+BCmetric=bcmvn$BCmetric
+pK_choose = pK[which(BCmetric %in% max(BCmetric))]
+df <- as.data.frame(cbind(pK, BCmetric))
+
+par(mar=c(5,4,4,8)+1,cex.main=1.2,font.main=2)
+
+p <- ggplot(df, mapping=aes(pK, BCmetric)) + geom_point(col='blue', pch=16) + geom_line(type='b', col="blue") + geom_vline(xintercept = pK_choose, col='red', lty='dashed') + ggtitle("The BCmvn distributions") + geom_text(x = 0.15, y = 1000, label = paste0("Choose pK = ", pK_choose))
+p
+```
 
 ```{r}
-saveRDS(seu, paste0(obj, "seu_befor_flux.RDS"))
+nExp <- round(ncol(seu) * 0.02)  # on impose le nombre de doublet à 2%
+nExp
+
+seu_sing <- suppressWarnings(doubletFinder_v3(seu, PCs = 1:15, pN = 0.25, pK = pK_choose, nExp = nExp, reuse.pANN = FALSE, sct = TRUE))
+
+# DimPlot(seu_sing, reduction = "umap", label = TRUE, group.by = "pANN_0.25_0.06_625")
+
+(table(seu@meta.data$orig.ident))
+dim(seu) 
+seu <- subset(seu_sing, "classifications_0.25_0.02_625" == "Singlet") 
+(table(seu@meta.data$orig.ident))  # pour avoir les comptes par jour
+dim(seu) # pour avoir les comptes locaux
+```
+
+
+```{r}
+# saveRDS(seu, paste0(obj, "seu_befor_flux.RDS"))
+a <- readRDS(paste0(obj, "seu_befor_flux.RDS"))
+dim(a)
 
 data_exp <- seu@assays$RNA@counts
 
